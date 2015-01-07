@@ -183,6 +183,14 @@ class PhysicalMemory : public Serializable
     bool isMemAddr(Addr addr) const;
 
     /**
+     * Return the backing store that corresponds to a physical address
+     *
+     * @param addr A physical address
+     * @return The corresponding backing store address
+     */
+    uint8_t* getPMem(Addr addr) const;
+
+    /**
      * Get the memory ranges for all memories that are to be reported
      * to the configuration table. The ranges are merged before they
      * are returned such that any interleaved ranges appear as a

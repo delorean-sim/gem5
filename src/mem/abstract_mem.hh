@@ -312,6 +312,12 @@ class AbstractMemory : public MemObject
      */
     void functionalAccess(PacketPtr pkt);
 
+    uint8_t* getHostAddr(Addr addr)
+    {
+        assert(range.contains(addr));
+        return pmemAddr + addr - range.start();
+    }
+
     /**
      * Register Statistics
      */
