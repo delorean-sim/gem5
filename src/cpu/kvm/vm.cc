@@ -196,6 +196,16 @@ Kvm::capXSave() const
 
 #if defined(__i386__) || defined(__x86_64__)
 bool
+Kvm::capSyncMMU() const
+{
+#ifdef KVM_CAP_SYNC_MMU
+    return checkExtension(KVM_CAP_SYNC_MMU) != 0;
+#else
+    return false;
+#endif
+}
+
+bool
 Kvm::getSupportedCPUID(struct kvm_cpuid2 &cpuid) const
 {
     if (ioctl(KVM_GET_SUPPORTED_CPUID, (void *)&cpuid) == -1) {

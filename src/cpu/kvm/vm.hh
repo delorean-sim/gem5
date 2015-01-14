@@ -139,6 +139,12 @@ class Kvm
 
     /** Support for getting and setting the kvm_xsave structure. */
     bool capXSave() const;
+
+    /**
+     * When set, changes in the backing of the memory region are automatically
+     * reflected into the guest.
+     */
+    bool capSyncMMU() const;
     /** @} */
 
 #if defined(__i386__) || defined(__x86_64__)

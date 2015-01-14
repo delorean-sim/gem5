@@ -168,6 +168,8 @@ BaseKvmCPU::startup()
         inform("KVM: Coalesced not supported by host OS\n");
     }
 
+    haveSyncMMU = kvm.capSyncMMU();
+
     thread->startup();
 
     Event *startupEvent(

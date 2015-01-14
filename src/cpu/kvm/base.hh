@@ -642,6 +642,9 @@ class BaseKvmCPU : public BaseCPU
     /** ID of the vCPU thread */
     pthread_t vcpuThread;
 
+    /** Changes to host mmap are reflected in the guest */
+    bool haveSyncMMU;
+
   private:
     /**
      * Service MMIO requests in the mmioRing.
