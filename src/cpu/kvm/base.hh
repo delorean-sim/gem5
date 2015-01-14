@@ -47,6 +47,7 @@
 #include <queue>
 
 #include "base/statistics.hh"
+#include "cpu/kvm/exec_context.hh"
 #include "cpu/kvm/perfevent.hh"
 #include "cpu/kvm/timer.hh"
 #include "cpu/kvm/vm.hh"
@@ -148,6 +149,8 @@ class BaseKvmCPU : public BaseCPU
      * objects to modify this thread's state.
      */
     ThreadContext *tc;
+
+    KvmExecContext *threadInfo;
 
     KvmVM &vm;
 
@@ -821,6 +824,11 @@ class BaseKvmCPU : public BaseCPU
 
     /** Host factor as specified in the configuration */
     float hostFactor;
+
+    Fault readMem(Addr addr, uint8_t *data, unsigned size,
+                  Request::Flags flags) override;
+    Fault writeMem(uint8_t *data, unsigned size, Addr addr,
+                   Request::Flags flags, uint64_t *res) override;
 
   public:
     /* @{ */

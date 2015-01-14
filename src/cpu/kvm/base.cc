@@ -48,6 +48,7 @@
 #include <csignal>
 #include <ostream>
 
+#include "arch/locked_mem.hh"
 #include "arch/mmapped_ipr.hh"
 #include "arch/utility.hh"
 #include "debug/Checkpoint.hh"
@@ -97,6 +98,7 @@ BaseKvmCPU::BaseKvmCPU(BaseKvmCPUParams *params)
                                   params->dtb, params->isa[0]);
 
     thread->setStatus(ThreadContext::Halted);
+    threadInfo = new KvmExecContext(this, thread);
     tc = thread->getTC();
     threadContexts.push_back(tc);
 }
@@ -1465,4 +1467,165 @@ BaseKvmCPU::setupUserInstCounter(uint64_t period)
         hwUserInstructions.enableSignals(KVM_KICK_SIGNAL);
 
     activeUserInstPeriod = period;
+}
+
+Fault
+BaseKvmCPU::readMem(Addr addr, uint8_t *data, unsigned size,
+                    Request::Flags flags)
+{
+    // use the CPU's statically allocated read request and packet objects
+    RequestPtr req = std::make_shared<Request>();
+    req->setContext(vcpuID); // Add thread ID if we add MT
+
+    //The size of the data we're trying to read.
+    int fullSize = size;
+
+    //The address of the second part of this access if it needs to be split
+    //across a cache line boundary.
+    Addr secondAddr = roundDown(addr + size - 1, cacheLineSize());
+
+    if (secondAddr > addr)
+        size = secondAddr - addr;
+
+    req->taskId(taskId());
+    while (1) {
+        req->setVirt(0, addr, size, flags, dataMasterId(),
+                    thread->pcState().instAddr());
+
+        // translate to physical address
+        Fault fault = thread->dtb->translateAtomic(req, tc, BaseTLB::Read);
+
+        // Now do the access.
+        if (fault == NoFault && !req->getFlags().isSet(Request::NO_ACCESS)) {
+            Packet pkt(req, Packet::makeReadCmd(req));
+            pkt.dataStatic(data);
+
+            if (req->isMmappedIpr()) {
+                TheISA::handleIprRead(thread->getTC(), &pkt);
+            } else {
+                if (system->isMemAddr(pkt.getAddr())) {
+                    system->getPhysMem().access(&pkt);
+                } else {
+                    dataPort.sendAtomic(&pkt);
+                }
+            }
+
+            assert(!pkt.isError());
+
+            if (req->isLLSC()) {
+                TheISA::handleLockedRead(thread, req);
+            }
+        }
+
+        // If there's a fault or we don't need to access a second
+        // cache line, stop now.
+        if (fault != NoFault || secondAddr <= addr) {
+            if (req->isPrefetch()) {
+                return NoFault;
+            } else {
+                return fault;
+            }
+        }
+
+        //Move the pointer we're reading into to the correct location.
+        data += size;
+        //Adjust the size to get the remaining bytes.
+        size = addr + fullSize - secondAddr;
+        //And access the right address.
+        addr = secondAddr;
+    }
+}
+
+Fault
+BaseKvmCPU::writeMem(uint8_t *data, unsigned size, Addr addr,
+                     Request::Flags flags, uint64_t *res)
+{
+    Addr cacheBlockMask = ~(cacheLineSize() - 1);
+    static uint8_t zero_array[64] = {};
+
+    if (data == NULL) {
+        assert(size <= 64);
+        assert(flags & Request::CACHE_BLOCK_ZERO);
+        // This must be a cache block cleaning request
+        data = zero_array;
+    }
+
+    RequestPtr req = std::make_shared<Request>();
+    req->setContext(vcpuID); // Add thread ID if we add MT
+
+    //The size of the data we're trying to read.
+    int fullSize = size;
+
+    //The address of the second part of this access if it needs to be split
+    //across a cache line boundary.
+    Addr secondAddr = roundDown(addr + size - 1, cacheLineSize());
+
+    if (secondAddr > addr) {
+        size = secondAddr - addr;
+    }
+
+    req->taskId(taskId());
+    while (1) {
+        req->setVirt(0, addr, size, flags, dataMasterId(),
+                    thread->pcState().instAddr());
+
+        // translate to physical address
+        Fault fault = thread->dtb->translateAtomic(req, tc, BaseTLB::Write);
+
+        // Now do the access.
+        if (fault == NoFault) {
+            bool do_access = true;  // flag to suppress cache access
+
+            if (req->isLLSC()) {
+                TheISA::handleLockedWrite(thread, req, cacheBlockMask);
+            } else if (req->isSwap()) {
+                if (req->isCondSwap()) {
+                    assert(res);
+                    req->setExtraData(*res);
+                }
+            }
+
+            if (do_access && !req->getFlags().isSet(Request::NO_ACCESS)) {
+                Packet pkt = Packet(req, Packet::makeWriteCmd(req));
+                pkt.dataStatic(data);
+
+                if (req->isMmappedIpr()) {
+                    TheISA::handleIprWrite(thread->getTC(), &pkt);
+                } else {
+                    system->getPhysMem().access(&pkt);
+                }
+                assert(!pkt.isError());
+
+                if (req->isSwap()) {
+                    assert(res);
+                    memcpy(res, pkt.getPtr<uint8_t>(), fullSize);
+                }
+            }
+
+            if (res && !req->isSwap()) {
+                *res = req->getExtraData();
+            }
+        }
+
+        // If there's a fault or we don't need to access a second
+        // cache line, stop now.
+        if (fault != NoFault || secondAddr <= addr) {
+            if (req->isPrefetch()) {
+                return NoFault;
+            } else {
+                return fault;
+            }
+        }
+
+        /*
+         * Set up for accessing the second cache line.
+         */
+
+        // Move the pointer we're reading into to the correct location.
+        data += size;
+        // Adjust the size to get the remaining bytes.
+        size = addr + fullSize - secondAddr;
+        // And access the right address.
+        addr = secondAddr;
+    }
 }
