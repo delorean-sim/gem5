@@ -57,6 +57,7 @@
 #include "debug/KvmGuestDebug.hh"
 #include "debug/KvmIO.hh"
 #include "debug/KvmRun.hh"
+#include "mem/fs_translating_port_proxy.hh"
 #include "params/BaseKvmCPU.hh"
 #include "sim/process.hh"
 #include "sim/system.hh"
@@ -1629,3 +1630,30 @@ BaseKvmCPU::writeMem(uint8_t *data, unsigned size, Addr addr,
         addr = secondAddr;
     }
 }
+
+StaticInstPtr
+BaseKvmCPU::getInst(ThreadContext *tc, TheISA::PCState &pc_state)
+{
+    FSTranslatingPortProxy *vp = &tc->getVirtProxy();
+
+    StaticInstPtr instPtr = nullptr;
+
+    TheISA::Decoder *decoder = tc->getDecoderPtr();
+    decoder->reset();
+    Addr fetch_pc = pc_state.pc() & BaseCPU::PCMask;
+    do {
+        TheISA::MachInst inst;
+        vp->readBlob(fetch_pc, (uint8_t *)&inst, sizeof(TheISA::MachInst));
+        decoder->moreBytes(pc_state, fetch_pc, inst);
+
+        // decode an instruction if one is ready
+        instPtr = decoder->decode(pc_state);
+        fetch_pc += sizeof(TheISA::MachInst);
+        // fetch more data if the decoder didn't return a valid
+        // instruction
+    } while (!instPtr);
+    thread->pcState(pc_state);
+
+    return instPtr;
+}
+

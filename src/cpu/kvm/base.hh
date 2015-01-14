@@ -830,6 +830,15 @@ class BaseKvmCPU : public BaseCPU
     Fault writeMem(uint8_t *data, unsigned size, Addr addr,
                    Request::Flags flags, uint64_t *res) override;
 
+    /**
+     * Helper function to return a static instruction at certain address
+     *
+     * @tc The thread context of the instruction
+     * @inst_addr The program counter of the instruction
+     * @return The static instruction
+     */
+    StaticInstPtr getInst(ThreadContext *tc, TheISA::PCState &pc_state);
+
   public:
     /* @{ */
     Stats::Scalar numInsts;
