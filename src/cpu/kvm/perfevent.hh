@@ -128,6 +128,28 @@ class PerfKvmCounterConfig
     }
 
     /**
+     * Exclude the events from the kernel.
+     *
+     * @param val true to exclude kernel events
+     */
+    PerfKvmCounterConfig &exclude_kernel(bool val) {
+        attr.exclude_kernel = val;
+
+        return *this;
+    }
+
+    /**
+     * Exclude the events from userspace.
+     *
+     * @param val true to exclude host events
+     */
+    PerfKvmCounterConfig &exclude_user(bool val) {
+        attr.exclude_user = val;
+
+        return *this;
+    }
+
+    /**
      * Exclude the events from the host (i.e., only include events
      * from the guest system).
      *
