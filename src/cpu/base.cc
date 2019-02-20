@@ -162,6 +162,13 @@ BaseCPU::BaseCPU(Params *p, bool is_checker)
         comInstEventQueue[tid] =
             new EventQueue("instruction-based event queue");
 
+    // allocate per-thread userspace instruction-based event queues
+    comUserInstEventQueue = new EventQueue *[numThreads];
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        comUserInstEventQueue[tid] =
+            new EventQueue("user-instruction-based event queue");
+    }
+
     //
     // set up instruction-count-based termination events, if any
     //
@@ -275,6 +282,7 @@ BaseCPU::~BaseCPU()
     delete profileEvent;
     delete[] comLoadEventQueue;
     delete[] comInstEventQueue;
+    delete[] comUserInstEventQueue;
 }
 
 void
@@ -788,6 +796,17 @@ BaseCPU::scheduleInstStop(ThreadID tid, Counter insts, const char *cause)
     Event *event(new LocalSimLoopExitEvent(cause, 0));
 
     comInstEventQueue[tid]->schedule(event, now + insts);
+}
+
+void
+BaseCPU::scheduleUserInstStop(ThreadID tid, Counter insts, const char *cause)
+{
+    const Tick now(comUserInstEventQueue[tid]->getCurTick());
+    Event *event(new LocalSimLoopExitEvent(cause, 0));
+
+    inform("Scheduling an simulation exit after %llu userspace insts"
+           " (thread %d)\n", insts, tid);
+    comUserInstEventQueue[tid]->schedule(event, now + insts);
 }
 
 uint64_t

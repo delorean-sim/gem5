@@ -82,6 +82,8 @@ class SimpleExecContext : public ExecContext {
     // Number of simulated instructions
     Counter numInst;
     Stats::Scalar numInsts;
+    Counter numUserInst;
+    Stats::Scalar numUserInsts;
     Counter numOp;
     Stats::Scalar numOps;
 

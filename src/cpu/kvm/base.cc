@@ -77,9 +77,11 @@ BaseKvmCPU::BaseKvmCPU(BaseKvmCPUParams *params)
       tickEvent([this]{ tick(); }, "BaseKvmCPU tick",
                 false, Event::CPU_Tick_Pri),
       activeInstPeriod(0),
+      activeUserInstPeriod(0),
       perfControlledByTimer(params->usePerfOverflow),
       hostFactor(params->hostFactor),
-      ctrInsts(0)
+      ctrInsts(0),
+      ctrUserInsts(0)
 {
     if (pageSize == -1)
         panic("KVM: Failed to determine host page size (%i)\n",
@@ -276,6 +278,11 @@ BaseKvmCPU::regStats()
 
     numInsts
         .name(name() + ".committedInsts")
+        .desc("Number of instructions committed")
+        ;
+
+    numUserInsts
+        .name(name() + ".committedUserspaceInsts")
         .desc("Number of instructions committed")
         ;
 
@@ -648,8 +655,10 @@ BaseKvmCPU::tick()
           // Setup any pending instruction count breakpoints using
           // PerfEvent if we are going to execute more than just an IO
           // completion.
-          if (ticksToExecute > 0)
+          if (ticksToExecute > 0) {
               setupInstStop();
+              setupUserInstStop();
+          }
 
           DPRINTF(KvmRun, "Entering KVM...\n");
           if (drainState() == DrainState::Draining) {
@@ -690,6 +699,8 @@ BaseKvmCPU::tick()
           // counter configured by setupInstStop().
           comInstEventQueue[0]->serviceEvents(ctrInsts);
           system->instEventQueue.serviceEvents(system->totalNumInsts);
+          comUserInstEventQueue[0]->serviceEvents(ctrUserInsts);
+          system->userInstEventQueue.serviceEvents(system->totalNumUserInsts);
 
           if (tryDrain())
               _status = Idle;
@@ -779,6 +790,7 @@ BaseKvmCPU::kvmRun(Tick ticks)
         // state update might affect guest cycle counters.
         uint64_t baseCycles(getHostCycles());
         uint64_t baseInstrs(hwInstructions.read());
+        uint64_t baseUserInstrs(hwUserInstructions.read());
 
         // Arm the run timer and start the cycle timer if it isn't
         // controlled by the overflow timer. Starting/stopping the cycle
@@ -804,13 +816,18 @@ BaseKvmCPU::kvmRun(Tick ticks)
         const uint64_t hostCyclesExecuted(getHostCycles() - baseCycles);
         const uint64_t simCyclesExecuted(hostCyclesExecuted * hostFactor);
         const uint64_t instsExecuted(hwInstructions.read() - baseInstrs);
+        const uint64_t userInstsExecuted(hwUserInstructions.read() -
+                                         baseUserInstrs);
         ticksExecuted = runTimer->ticksFromHostCycles(hostCyclesExecuted);
 
         /* Update statistics */
         numCycles += simCyclesExecuted;;
         numInsts += instsExecuted;
         ctrInsts += instsExecuted;
+        numUserInsts += userInstsExecuted;
+        ctrUserInsts += userInstsExecuted;
         system->totalNumInsts += instsExecuted;
+        system->totalNumUserInsts += userInstsExecuted;
 
         DPRINTF(KvmRun,
                 "KVM: Executed %i instructions in %i cycles "
@@ -1311,6 +1328,7 @@ BaseKvmCPU::setupCounters()
                     0); // TID (0 => currentThread)
 
     setupInstCounter();
+    setupUserInstCounter();
 }
 
 bool
@@ -1394,4 +1412,56 @@ BaseKvmCPU::setupInstCounter(uint64_t period)
         hwInstructions.enableSignals(KVM_KICK_SIGNAL);
 
     activeInstPeriod = period;
+}
+
+void
+BaseKvmCPU::setupUserInstStop()
+{
+    if (comUserInstEventQueue[0]->empty()) {
+        setupUserInstCounter(0);
+    } else {
+        const uint64_t next(comUserInstEventQueue[0]->nextTick());
+
+        assert(next > ctrUserInsts);
+        setupInstCounter(next - ctrUserInsts);
+    }
+}
+
+void
+BaseKvmCPU::setupUserInstCounter(uint64_t period)
+{
+    // No need to do anything if we aren't attaching for the first
+    // time or the period isn't changing.
+    if (period == activeUserInstPeriod && hwUserInstructions.attached())
+        return;
+
+    PerfKvmCounterConfig cfgUserInstructions(PERF_TYPE_HARDWARE,
+                                          PERF_COUNT_HW_INSTRUCTIONS);
+
+    // Try to exclude the host. We set both exclude_hv and
+    // exclude_host since different architectures use slightly
+    // different APIs in the kernel.
+    cfgUserInstructions.exclude_hv(true)
+        .exclude_host(true)
+        .exclude_kernel(true);
+
+    if (period) {
+        // Setup a sampling counter if that has been requested.
+        cfgUserInstructions.wakeupEvents(1)
+            .samplePeriod(period);
+    }
+
+    // We need to detach and re-attach the counter to reliably change
+    // sampling settings. See PerfKvmCounter::period() for details.
+    if (hwUserInstructions.attached())
+        hwUserInstructions.detach();
+    assert(hwCycles.attached());
+    hwUserInstructions.attach(cfgUserInstructions,
+                           0, // TID (0 => currentThread)
+                           hwCycles);
+
+    if (period)
+        hwUserInstructions.enableSignals(KVM_KICK_SIGNAL);
+
+    activeUserInstPeriod = period;
 }

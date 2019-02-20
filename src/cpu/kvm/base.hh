@@ -718,6 +718,18 @@ class BaseKvmCPU : public BaseCPU
      */
     void setupInstStop();
 
+    /**
+     * Setup a user instruction break if there is one pending.
+     *
+     * Check if there are pending user instruction breaks in the CPU's
+     * instruction event queue and schedule an instruction break using
+     * PerfEvent.
+     *
+     * @note This method doesn't currently handle the main system
+     * instruction event queue.
+     */
+    void setupUserInstStop();
+
     /** @{ */
     /** Setup hardware performance counters */
     void setupCounters();
@@ -736,6 +748,22 @@ class BaseKvmCPU : public BaseCPU
 
     /** Currently active instruction count breakpoint */
     uint64_t activeInstPeriod;
+
+    /**
+     * Setup the guest userspace instruction counter.
+     *
+     * Setup the guest userspace instruction counter and optionally
+     * request a signal every N instructions executed by the
+     * guest. This method will re-attach the counter if the counter
+     * has already been attached and its sampling settings have
+     * changed.
+     *
+     * @param period Signal period, set to 0 to disable signaling.
+     */
+    void setupUserInstCounter(uint64_t period = 0);
+
+    /** Currently active userspace instruction count breakpoint */
+    uint64_t activeUserInstPeriod;
 
     /**
      * Guest cycle counter.
@@ -761,6 +789,19 @@ class BaseKvmCPU : public BaseCPU
     PerfKvmCounter hwInstructions;
 
     /**
+     * Guest userspace instruction counter.
+     *
+     * This counter is typically only used to measure the number of
+     * instructions executed by the guest in userspace. However, it
+     * can also be used to trigger exits from KVM if the configuration
+     * script requests an exit after a certain number of instructions.
+     *
+     * @see setupInstBreak
+     * @see scheduleInstStop
+     */
+    PerfKvmCounter hwUserInstructions;
+
+    /*
      * Does the runTimer control the performance counters?
      *
      * The run timer will automatically enable and disable performance
@@ -784,6 +825,7 @@ class BaseKvmCPU : public BaseCPU
   public:
     /* @{ */
     Stats::Scalar numInsts;
+    Stats::Scalar numUserInsts;
     Stats::Scalar numVMExits;
     Stats::Scalar numVMHalfEntries;
     Stats::Scalar numExitSignal;
@@ -797,6 +839,8 @@ class BaseKvmCPU : public BaseCPU
 
     /** Number of instructions executed by the CPU */
     Counter ctrInsts;
+    /** Number of instructions executed by the CPU */
+    Counter ctrUserInsts;
 };
 
 #endif

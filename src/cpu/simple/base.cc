@@ -178,6 +178,12 @@ BaseSimpleCPU::countInst()
 
         t_info.thread->funcExeInst++;
         system->totalNumInsts++;
+
+        if (TheISA::inUserMode(t_info.tcBase())) {
+            t_info.numUserInst++;
+            t_info.numUserInsts++;
+            system->totalNumUserInsts++;
+        }
     }
     t_info.numOp++;
     t_info.numOps++;
@@ -235,6 +241,11 @@ BaseSimpleCPU::regStats()
         t_info.numInsts
             .name(thread_str + ".committedInsts")
             .desc("Number of instructions committed")
+            ;
+
+        t_info.numUserInsts
+            .name(name() + ".committedUserInsts")
+            .desc("Number of committed userspace instructions")
             ;
 
         t_info.numOps
@@ -498,7 +509,9 @@ BaseSimpleCPU::preExecute()
 
     // check for instruction-count-based events
     comInstEventQueue[curThread]->serviceEvents(t_info.numInst);
+    comUserInstEventQueue[curThread]->serviceEvents(t_info.numUserInst);
     system->instEventQueue.serviceEvents(system->totalNumInsts);
+    system->userInstEventQueue.serviceEvents(system->totalNumUserInsts);
 
     // decode the instruction
     inst = gtoh(inst);

@@ -378,6 +378,13 @@ class BaseCPU : public MemObject
     EventQueue **comInstEventQueue;
 
     /**
+     * Vector of per-thread userspace instruction-based event queues.
+     * Used for scheduling events based on number of userspace
+     * instructions committed by a particular thread.
+     */
+    EventQueue **comUserInstEventQueue;
+
+    /**
      * Vector of per-thread load-based event queues.  Used for
      * scheduling events based on number of loads committed by
      *a particular thread.
@@ -451,6 +458,21 @@ class BaseCPU : public MemObject
      * @param cause Cause to signal in the exit event.
      */
     void scheduleInstStop(ThreadID tid, Counter insts, const char *cause);
+
+    /**
+     * Schedule an event that exits the simulation loops after a
+     * predefined number of userspace instructions.
+     *
+     * This method is usually called from the configuration script to
+     * get an exit event some time in the future. It is typically used
+     * when the script wants to simulate for a specific number of
+     * instructions rather than ticks.
+     *
+     * @param tid Thread monitor.
+     * @param insts Number of instructions into the future.
+     * @param cause Cause to signal in the exit event.
+     */
+    void scheduleUserInstStop(ThreadID tid, Counter insts, const char *cause);
 
     /**
      * Schedule an event that exits the simulation loops after a
