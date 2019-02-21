@@ -2768,6 +2768,14 @@ class SparseHistBase : public DataWrap<Derived, SparseHistInfoProxy>
     void sample(const U &v, int n = 1) { data()->sample(v, n); }
 
     /**
+     * Return the number of entries for a specific value
+     * @param v The value to get.
+     * @number of times v was sampled
+     */
+    template <typename U>
+    int get(const U &v) { return data()->get(v); }
+
+    /**
      * Return the number of entries in this stat.
      * @return The number of entries.
      */
@@ -2830,6 +2838,13 @@ class SparseHistStor
         cmap[val] += number;
         samples += number;
     }
+
+    /**
+     * Return the number of entries for a specific value
+     * @param val The value to get.
+     * @return the number of times val was sampled
+     */
+    int get(Counter val) { return cmap[val]; }
 
     /**
      * Return the number of buckets in this distribution.
