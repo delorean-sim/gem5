@@ -175,12 +175,12 @@ BaseSimpleCPU::countInst()
     if (!curStaticInst->isMicroop() || curStaticInst->isLastMicroop()) {
         t_info.numInst++;
         t_info.numInsts++;
+
+        t_info.thread->funcExeInst++;
+        system->totalNumInsts++;
     }
     t_info.numOp++;
     t_info.numOps++;
-
-    system->totalNumInsts++;
-    t_info.thread->funcExeInst++;
 }
 
 Counter
