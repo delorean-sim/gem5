@@ -47,6 +47,7 @@
 #include "debug/Drain.hh"
 #include "debug/Kvm.hh"
 #include "debug/KvmContext.hh"
+#include "debug/KvmGuestDebug.hh"
 #include "debug/KvmIO.hh"
 #include "debug/KvmInt.hh"
 

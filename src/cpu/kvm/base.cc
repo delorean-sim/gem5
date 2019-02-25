@@ -53,6 +53,7 @@
 #include "debug/Checkpoint.hh"
 #include "debug/Drain.hh"
 #include "debug/Kvm.hh"
+#include "debug/KvmGuestDebug.hh"
 #include "debug/KvmIO.hh"
 #include "debug/KvmRun.hh"
 #include "params/BaseKvmCPU.hh"
