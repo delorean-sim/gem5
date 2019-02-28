@@ -772,6 +772,35 @@ class BaseKvmCPU : public BaseCPU
     uint64_t activeUserInstPeriod;
 
     /**
+     * Setup the guest userspace load instruction counter.
+     *
+     * Setup the guest userspace load instruction counter and
+     * optionally request a signal every N userspace load instructions
+     * executed by the guest. This method will re-attach the counter
+     * if the counter has already been attached and its sampling
+     * settings have changed.
+     *
+     * @param period Signal period, set to 0 to disable signaling.
+     */
+    void setupUserInstLoadCounter(uint64_t period = 0);
+
+    /** Currently active userspace load instruction count breakpoint */
+    uint64_t activeUserInstLoadPeriod;
+    const uint64_t skidUserInstLoad;
+
+    /**
+     * Setup a user load instruction break if there is one pending.
+     *
+     * Check if there are pending user load instruction breaks in the
+     * CPU's instruction event queue and schedule an instruction break
+     * using PerfEvent.
+     *
+     * @note This method doesn't currently handle the main system
+     * instruction event queue.
+     */
+    void setupUserInstLoadStop();
+
+    /**
      * Guest cycle counter.
      *
      * This is the group leader of all performance counters measuring
@@ -806,6 +835,20 @@ class BaseKvmCPU : public BaseCPU
      * @see scheduleInstStop
      */
     PerfKvmCounter hwUserInstructions;
+
+    /**
+     * Guest userspace load instruction counter.
+     *
+     * This counter is typically only used to measure the number of
+     * load instructions executed by the guest in userspace. However,
+     * it can also be used to trigger exits from KVM if the
+     * configuration script requests an exit after a certain number of
+     * userspace load instructions.
+     *
+     * @see setupUserInstLoadBreak
+     * @see scheduleUserInstLoadStop
+     */
+    PerfKvmCounter hwUserInstLoad;
 
     /*
      * Does the runTimer control the performance counters?
@@ -846,6 +889,7 @@ class BaseKvmCPU : public BaseCPU
     /* @{ */
     Stats::Scalar numInsts;
     Stats::Scalar numUserInsts;
+    Stats::Scalar numUserInstsLoad;
     Stats::Scalar numVMExits;
     Stats::Scalar numVMHalfEntries;
     Stats::Scalar numExitSignal;
@@ -861,6 +905,8 @@ class BaseKvmCPU : public BaseCPU
     Counter ctrInsts;
     /** Number of instructions executed by the CPU */
     Counter ctrUserInsts;
+    /** Number of instructions executed by the CPU */
+    Counter ctrUserInstsLoad;
 };
 
 #endif

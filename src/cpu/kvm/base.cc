@@ -81,6 +81,8 @@ BaseKvmCPU::BaseKvmCPU(BaseKvmCPUParams *params)
                 false, Event::CPU_Tick_Pri),
       activeInstPeriod(0),
       activeUserInstPeriod(0),
+      skidUserInstLoad(40),
+      skidUserInstStore(40),
       perfControlledByTimer(params->usePerfOverflow),
       hostFactor(params->hostFactor),
       ctrInsts(0),
@@ -290,6 +292,16 @@ BaseKvmCPU::regStats()
     numUserInsts
         .name(name() + ".committedUserspaceInsts")
         .desc("Number of instructions committed")
+        ;
+
+    numUserInstsLoad
+        .name(name() + ".userInstsLoad")
+        .desc("number of committed userspace instructions with a load")
+        ;
+
+    numUserInstsStore
+        .name(name() + ".userInstsStore")
+        .desc("number of committed userspace instructions with a store")
         ;
 
     numVMExits
@@ -664,6 +676,8 @@ BaseKvmCPU::tick()
           if (ticksToExecute > 0) {
               setupInstStop();
               setupUserInstStop();
+              setupUserInstLoadStop();
+              setupUserInstStoreStop();
           }
 
           DPRINTF(KvmRun, "Entering KVM...\n");
@@ -797,6 +811,8 @@ BaseKvmCPU::kvmRun(Tick ticks)
         uint64_t baseCycles(getHostCycles());
         uint64_t baseInstrs(hwInstructions.read());
         uint64_t baseUserInstrs(hwUserInstructions.read());
+        uint64_t baseUserInstrsLoad(hwUserInstLoad.read());
+        uint64_t baseUserInstrsStore(hwUserInstStore.read());
 
         // Arm the run timer and start the cycle timer if it isn't
         // controlled by the overflow timer. Starting/stopping the cycle
@@ -824,6 +840,10 @@ BaseKvmCPU::kvmRun(Tick ticks)
         const uint64_t instsExecuted(hwInstructions.read() - baseInstrs);
         const uint64_t userInstsExecuted(hwUserInstructions.read() -
                                          baseUserInstrs);
+        const uint64_t userInstsLoadExecuted(hwUserInstLoad.read() -
+                                             baseUserInstrsLoad);
+        const uint64_t userInstsStoreExecuted(hwUserInstStore.read() -
+                                              baseUserInstrsStore);
         ticksExecuted = runTimer->ticksFromHostCycles(hostCyclesExecuted);
 
         /* Update statistics */
@@ -832,6 +852,11 @@ BaseKvmCPU::kvmRun(Tick ticks)
         ctrInsts += instsExecuted;
         numUserInsts += userInstsExecuted;
         ctrUserInsts += userInstsExecuted;
+        numUserInstsLoad += userInstsLoadExecuted;
+        ctrUserInstsLoad += userInstsLoadExecuted;
+        numUserInstsStore += userInstsStoreExecuted;
+        ctrUserInstsStore += userInstsStoreExecuted;
+
         system->totalNumInsts += instsExecuted;
         system->totalNumUserInsts += userInstsExecuted;
 
@@ -1335,6 +1360,8 @@ BaseKvmCPU::setupCounters()
 
     setupInstCounter();
     setupUserInstCounter();
+    setupUserInstLoadCounter();
+    setupUserInstStoreCounter();
 }
 
 bool
@@ -1470,6 +1497,123 @@ BaseKvmCPU::setupUserInstCounter(uint64_t period)
         hwUserInstructions.enableSignals(KVM_KICK_SIGNAL);
 
     activeUserInstPeriod = period;
+}
+
+void
+BaseKvmCPU::setupUserInstLoadStop()
+{
+    if (memSampler) {
+        assert(memSampler->getLoadCount() == ctrUserInstsLoad);
+        uint64_t next = memSampler->getNextLoadStop(1);
+        if (next != (uint64_t)-1) {
+            assert(next > ctrUserInstsLoad);
+            uint64_t period = next - ctrUserInstsLoad;
+            if (period > skidUserInstLoad) {
+                period -= skidUserInstLoad;
+            }
+            setupUserInstLoadCounter(period);
+        }
+    }
+}
+
+#define PERF_EVENT_MEM_INST_RETIRED_LOADS 0x81d0
+
+void
+BaseKvmCPU::setupUserInstLoadCounter(uint64_t period)
+{
+    // No need to do anything if we aren't attaching for the first
+    // time or the period isn't changing.
+    if (period == activeUserInstLoadPeriod && hwUserInstLoad.attached())
+        return;
+
+    DPRINTF(KvmGuestDebug, "Simulation will stop after %d user loads\n",
+            period);
+
+    PerfKvmCounterConfig cfg(PERF_TYPE_RAW,
+                             PERF_EVENT_MEM_INST_RETIRED_LOADS);
+
+    // Try to exclude the host. We set both exclude_hv and
+    // exclude_host since different architectures use slightly
+    // different APIs in the kernel.
+    cfg.exclude_hv(true)
+        .exclude_host(true)
+        .exclude_kernel(true);
+
+    if (period) {
+        cfg.wakeupEvents(1)
+            .samplePeriod(period);
+    }
+
+    // We need to detach and re-attach the counter to reliably change
+    // sampling settings. See PerfKvmCounter::period() for details.
+    if (hwUserInstLoad.attached())
+        hwUserInstLoad.detach();
+    assert(hwCycles.attached());
+    hwUserInstLoad.attach(cfg,
+                           0, // TID (0 => currentThread)
+                           hwCycles);
+
+    if (period)
+        hwUserInstLoad.enableSignals(KVM_KICK_SIGNAL);
+
+    activeUserInstLoadPeriod = period;
+}
+
+void
+BaseKvmCPU::setupUserInstStoreStop()
+{
+    if (memSampler) {
+        uint64_t next = memSampler->getNextStoreStop();
+        if (next != (uint64_t)-1) {
+            assert(next > ctrUserInstsStore);
+            setupUserInstStoreCounter(next - ctrUserInstsStore -
+                                      skidUserInstStore);
+        }
+    }
+}
+
+#define PERF_EVENT_MEM_INST_RETIRED_STORES 0x82d0
+
+void
+BaseKvmCPU::setupUserInstStoreCounter(uint64_t period)
+{
+    // No need to do anything if we aren't attaching for the first
+    // time or the period isn't changing.
+    if (period == activeUserInstStorePeriod && hwUserInstStore.attached())
+        return;
+
+    DPRINTF(KvmGuestDebug, "Simulation will stop after %d user stores\n",
+            period);
+
+    PerfKvmCounterConfig cfg(PERF_TYPE_RAW,
+                             PERF_EVENT_MEM_INST_RETIRED_STORES);
+
+    // Try to exclude the host. We set both exclude_hv and
+    // exclude_host since different architectures use slightly
+    // different APIs in the kernel.
+    cfg.exclude_hv(true)
+        .exclude_host(true)
+        .exclude_kernel(true);
+
+    if (period) {
+        // Setup a sampling counter if that has been requested.
+        cfg.wakeupEvents(1)
+            .samplePeriod(period);
+    }
+
+    // We need to detach and re-attach the counter to reliably change
+    // sampling settings. See PerfKvmCounter::period() for details.
+    if (hwUserInstStore.attached())
+        hwUserInstStore.detach();
+    assert(hwCycles.attached());
+    hwUserInstStore.attach(cfg,
+                            0, // TID (0 => currentThread)
+                            hwCycles);
+
+    if (period)
+        hwUserInstStore.enableSignals(KVM_KICK_SIGNAL);
+
+    activeUserInstStorePeriod = period;
 }
 
 Fault

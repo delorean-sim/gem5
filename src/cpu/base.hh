@@ -391,6 +391,15 @@ class BaseCPU : public MemObject
      */
     EventQueue **comLoadEventQueue;
 
+    /**
+     * Vector of per-thread event queues based on userspace
+     * instructions with load. Used for scheduling events based on
+     * number of userspace instructions with load committed by a
+     * particular thread.
+     */
+    EventQueue **comUserInstLoadEventQueue;
+
+
     System *system;
 
     /**
@@ -488,6 +497,22 @@ class BaseCPU : public MemObject
      * @param cause Cause to signal in the exit event.
      */
     void scheduleLoadStop(ThreadID tid, Counter loads, const char *cause);
+
+    /**
+     * Schedule an event that exits the simulation loops after a
+     * predefined number of load operations.
+     *
+     * This method is usually called from the configuration script to
+     * get an exit event some time in the future. It is typically used
+     * when the script wants to simulate for a specific number of
+     * loads rather than ticks.
+     *
+     * @param tid Thread monitor.
+     * @param loads Number of load instructions into the future.
+     * @param cause Cause to signal in the exit event.
+     */
+    void scheduleUserInstLoadStop(ThreadID tid, Counter loads,
+                                  const char *cause);
 
     /**
      * Get the number of instructions executed by the specified thread

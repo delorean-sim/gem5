@@ -207,6 +207,13 @@ BaseCPU::BaseCPU(Params *p, bool is_checker)
     for (ThreadID tid = 0; tid < numThreads; ++tid)
         comLoadEventQueue[tid] = new EventQueue("load-based event queue");
 
+    // allocate per-thread load-based event queues
+    comUserInstLoadEventQueue = new EventQueue *[numThreads];
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        comUserInstLoadEventQueue[tid] = new EventQueue(
+            "event queue based on user instructions with load");
+    }
+
     //
     // set up instruction-count-based termination events, if any
     //
@@ -283,6 +290,7 @@ BaseCPU::~BaseCPU()
     delete[] comLoadEventQueue;
     delete[] comInstEventQueue;
     delete[] comUserInstEventQueue;
+    delete[] comUserInstLoadEventQueue;
 }
 
 void
@@ -841,6 +849,18 @@ BaseCPU::scheduleLoadStop(ThreadID tid, Counter loads, const char *cause)
     Event *event(new LocalSimLoopExitEvent(cause, 0));
 
     comLoadEventQueue[tid]->schedule(event, now + loads);
+}
+
+void
+BaseCPU::scheduleUserInstLoadStop(ThreadID tid, Counter loads,
+                                  const char *cause)
+{
+    const Tick now(comUserInstLoadEventQueue[tid]->getCurTick());
+    Event *event(new LocalSimLoopExitEvent(cause, 0));
+
+    inform("Scheduling exit event after %llu userspace loads (thread %d)\n",
+           loads, tid);
+    comUserInstLoadEventQueue[tid]->schedule(event, now + loads);
 }
 
 

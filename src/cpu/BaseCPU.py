@@ -113,6 +113,7 @@ class BaseCPU(MemObject):
         PyBindMethod("scheduleInstStop"),
         PyBindMethod("scheduleUserInstStop"),
         PyBindMethod("scheduleLoadStop"),
+        PyBindMethod("scheduleUserInstLoadStop"),
         PyBindMethod("getCurrentInstCount"),
     ]
 
