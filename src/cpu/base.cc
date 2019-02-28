@@ -214,6 +214,13 @@ BaseCPU::BaseCPU(Params *p, bool is_checker)
             "event queue based on user instructions with load");
     }
 
+    // allocate per-thread load-based event queues
+    comUserInstStoreEventQueue = new EventQueue *[numThreads];
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        comUserInstStoreEventQueue[tid] = new EventQueue(
+            "event queue based on user instructions with store");
+    }
+
     //
     // set up instruction-count-based termination events, if any
     //
@@ -291,6 +298,7 @@ BaseCPU::~BaseCPU()
     delete[] comInstEventQueue;
     delete[] comUserInstEventQueue;
     delete[] comUserInstLoadEventQueue;
+    delete[] comUserInstStoreEventQueue;
 }
 
 void
@@ -863,6 +871,17 @@ BaseCPU::scheduleUserInstLoadStop(ThreadID tid, Counter loads,
     comUserInstLoadEventQueue[tid]->schedule(event, now + loads);
 }
 
+void
+BaseCPU::scheduleUserInstStoreStop(ThreadID tid, Counter stores,
+                                   const char *cause)
+{
+    const Tick now(comUserInstStoreEventQueue[tid]->getCurTick());
+    Event *event(new LocalSimLoopExitEvent(cause, 0));
+
+    inform("Scheduling exit event after %llu userspace stores (thread %d)\n",
+           stores, tid);
+    comUserInstStoreEventQueue[tid]->schedule(event, now + stores);
+}
 
 void
 BaseCPU::traceFunctionsInternal(Addr pc)

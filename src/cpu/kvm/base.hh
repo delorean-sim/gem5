@@ -789,6 +789,23 @@ class BaseKvmCPU : public BaseCPU
     const uint64_t skidUserInstLoad;
 
     /**
+     * Setup the guest userspace store instruction counter.
+     *
+     * Setup the guest userspace store instruction counter and
+     * optionally request a signal every N userspace store instructions
+     * executed by the guest. This method will re-attach the counter
+     * if the counter has already been attached and its sampling
+     * settings have changed.
+     *
+     * @param period Signal period, set to 0 to disable signaling.
+     */
+    void setupUserInstStoreCounter(uint64_t period = 0);
+
+    /** Currently active userspace store instruction count breakpoint */
+    uint64_t activeUserInstStorePeriod;
+    const uint64_t skidUserInstStore;
+
+    /**
      * Setup a user load instruction break if there is one pending.
      *
      * Check if there are pending user load instruction breaks in the
@@ -799,6 +816,18 @@ class BaseKvmCPU : public BaseCPU
      * instruction event queue.
      */
     void setupUserInstLoadStop();
+
+    /**
+     * Setup a user store instruction break if there is one pending.
+     *
+     * Check if there are pending user store instruction breaks in the
+     * CPU's instruction event queue and schedule an instruction break
+     * using PerfEvent.
+     *
+     * @note This method doesn't currently handle the main system
+     * instruction event queue.
+     */
+    void setupUserInstStoreStop();
 
     /**
      * Guest cycle counter.
@@ -850,6 +879,20 @@ class BaseKvmCPU : public BaseCPU
      */
     PerfKvmCounter hwUserInstLoad;
 
+    /**
+     * Guest userspace store instruction counter.
+     *
+     * This counter is typically only used to measure the number of
+     * store instructions executed by the guest in userspace. However,
+     * it can also be used to trigger exits from KVM if the
+     * configuration script requests an exit after a certain number of
+     * userspace store instructions.
+     *
+     * @see setupUserInstStoreBreak
+     * @see scheduleUserInstStoreStop
+     */
+    PerfKvmCounter hwUserInstStore;
+
     /*
      * Does the runTimer control the performance counters?
      *
@@ -890,6 +933,7 @@ class BaseKvmCPU : public BaseCPU
     Stats::Scalar numInsts;
     Stats::Scalar numUserInsts;
     Stats::Scalar numUserInstsLoad;
+    Stats::Scalar numUserInstsStore;
     Stats::Scalar numVMExits;
     Stats::Scalar numVMHalfEntries;
     Stats::Scalar numExitSignal;
@@ -907,6 +951,8 @@ class BaseKvmCPU : public BaseCPU
     Counter ctrUserInsts;
     /** Number of instructions executed by the CPU */
     Counter ctrUserInstsLoad;
+    /** Number of instructions executed by the CPU */
+    Counter ctrUserInstsStore;
 };
 
 #endif

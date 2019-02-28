@@ -399,6 +399,14 @@ class BaseCPU : public MemObject
      */
     EventQueue **comUserInstLoadEventQueue;
 
+    /**
+     * Vector of per-thread event queues based on userspace
+     * instructions with store. Used for scheduling events based on
+     * number of userspace instructions with store committed by a
+     * particular thread.
+     */
+    EventQueue **comUserInstStoreEventQueue;
+
 
     System *system;
 
@@ -513,6 +521,22 @@ class BaseCPU : public MemObject
      */
     void scheduleUserInstLoadStop(ThreadID tid, Counter loads,
                                   const char *cause);
+
+    /**
+     * Schedule an event that exits the simulation loops after a
+     * predefined number of store operations.
+     *
+     * This method is usually called from the configuration script to
+     * get an exit event some time in the future. It is typically used
+     * when the script wants to simulate for a specific number of
+     * loads rather than ticks.
+     *
+     * @param tid Thread monitor.
+     * @param stores Number of store instructions into the future.
+     * @param cause Cause to signal in the exit event.
+     */
+    void scheduleUserInstStoreStop(ThreadID tid, Counter stores,
+                                   const char *cause);
 
     /**
      * Get the number of instructions executed by the specified thread

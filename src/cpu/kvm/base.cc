@@ -1563,11 +1563,15 @@ void
 BaseKvmCPU::setupUserInstStoreStop()
 {
     if (memSampler) {
-        uint64_t next = memSampler->getNextStoreStop();
+        assert(memSampler->getStoreCount() == ctrUserInstsStore);
+        uint64_t next = memSampler->getNextStoreStop(1);
         if (next != (uint64_t)-1) {
             assert(next > ctrUserInstsStore);
-            setupUserInstStoreCounter(next - ctrUserInstsStore -
-                                      skidUserInstStore);
+            uint64_t period = next - ctrUserInstsStore;
+            if (period > skidUserInstStore) {
+                period -= skidUserInstStore;
+            }
+            setupUserInstStoreCounter(period);
         }
     }
 }
