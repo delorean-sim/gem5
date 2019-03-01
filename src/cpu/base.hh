@@ -646,6 +646,48 @@ class BaseCPU : public MemObject
     std::vector<AddressMonitor> addressMonitor;
 
   public:
+    /**
+     * @{
+     * @name Memory Interface
+     */
+    /**
+     * Perform an atomic memory read operation.  Must be overridden
+     * for exec contexts that support atomic memory mode.  Not pure
+     * virtual since exec contexts that only support timing memory
+     * mode need not override (though in that case this function
+     * should never be called).
+     */
+    virtual Fault readMem(Addr addr, uint8_t *data, unsigned int size,
+                          Request::Flags flags)
+    {
+        panic("BaseCPU::readMem() should be overridden\n");
+    }
+
+    /**
+     * Initiate a timing memory read operation.  Must be overridden
+     * for exec contexts that support timing memory mode.  Not pure
+     * virtual since exec contexts that only support atomic memory
+     * mode need not override (though in that case this function
+     * should never be called).
+     */
+    virtual Fault initiateMemRead(Addr addr, unsigned int size,
+                                  Request::Flags flags)
+    {
+        panic("BaseCPU::initiateMemRead() should be overridden\n");
+    }
+
+    /**
+     * For atomic-mode contexts, perform an atomic memory write operation.
+     * For timing-mode contexts, initiate a timing memory write operation.
+     */
+    virtual Fault writeMem(uint8_t *data, unsigned int size, Addr addr,
+                           Request::Flags flags, uint64_t *res)
+    {
+        panic("BaseCPU::writeMem should be overridden\n");
+    }
+
+    /** @} */
+
     void armMonitor(ThreadID tid, Addr address);
     bool mwait(ThreadID tid, PacketPtr pkt);
     void mwaitAtomic(ThreadID tid, ThreadContext *tc, BaseTLB *dtb);

@@ -142,15 +142,6 @@ class BaseSimpleCPU : public BaseCPU
 
     void startup() override;
 
-    virtual Fault readMem(Addr addr, uint8_t* data, unsigned size,
-                          Request::Flags flags) = 0;
-
-    virtual Fault initiateMemRead(Addr addr, unsigned size,
-                                  Request::Flags flags) = 0;
-
-    virtual Fault writeMem(uint8_t* data, unsigned size, Addr addr,
-                           Request::Flags flags, uint64_t* res) = 0;
-
     void countInst();
     Counter totalInsts() const override;
     Counter totalOps() const override;
