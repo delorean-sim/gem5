@@ -53,6 +53,7 @@
 #include "arch/utility.hh"
 #include "debug/Checkpoint.hh"
 #include "debug/Drain.hh"
+#include "debug/ExecFaulting.hh"
 #include "debug/Kvm.hh"
 #include "debug/KvmGuestDebug.hh"
 #include "debug/KvmIO.hh"
@@ -1634,6 +1635,10 @@ BaseKvmCPU::readMem(Addr addr, uint8_t *data, unsigned size,
     RequestPtr req = std::make_shared<Request>();
     req->setContext(vcpuID); // Add thread ID if we add MT
 
+    if (traceData) {
+        traceData->setMem(addr, size, flags);
+    }
+
     //The size of the data we're trying to read.
     int fullSize = size;
 
@@ -1709,6 +1714,10 @@ BaseKvmCPU::writeMem(uint8_t *data, unsigned size, Addr addr,
 
     RequestPtr req = std::make_shared<Request>();
     req->setContext(vcpuID); // Add thread ID if we add MT
+
+    if (traceData) {
+        traceData->setMem(addr, size, flags);
+    }
 
     //The size of the data we're trying to read.
     int fullSize = size;
@@ -1813,6 +1822,102 @@ BaseKvmCPU::getInst(ThreadContext *tc, TheISA::PCState &pc_state)
     return instPtr;
 }
 
+
+void
+BaseKvmCPU::updateCounters(const StaticInstPtr inst)
+{
+    if (!inst->isMicroop() || inst->isLastMicroop()) {
+        numCycles++;
+        numInsts++;
+        ctrInsts++;
+
+        system->totalNumInsts++;
+
+        if (TheISA::inUserMode(tc)) {
+            numUserInsts++;
+            ctrUserInsts++;
+
+            system->totalNumUserInsts++;
+        }
+    }
+
+    if (inst->isMemRef()) {
+        if (TheISA::inUserMode(tc)) {
+            if (inst->isLoad()) {
+                numUserInstsLoad++;
+                ctrUserInstsLoad++;
+            }
+            if (inst->isStore()) {
+                numUserInstsStore++;
+                ctrUserInstsStore++;
+            }
+        }
+    }
+
+    if (memSampler) {
+        memSampler->setTime(ctrUserInsts, ctrUserInstsLoad,
+                            ctrUserInstsStore);
+    }
+}
+
+void
+BaseKvmCPU::execute(StaticInstPtr inst)
+{
+    StaticInstPtr macroInst = StaticInst::nullStaticInstPtr;
+    if (inst->isMacroop())
+        macroInst = inst;
+
+    TheISA::PCState pc_state = thread->pcState();
+
+    DPRINTF(KvmGuestDebug, "%s inst: %s\n", pc_state,
+            inst->disassemble(thread->instAddr()));
+    do {
+        if (macroInst) {
+            inst = macroInst->fetchMicroop(pc_state.microPC());
+            DPRINTF(KvmGuestDebug, "%s micro-op: %s\n", pc_state,
+                    inst->disassemble(thread->instAddr()));
+        }
+
+#if TRACING_ON
+        traceData = tracer->getInstRecord(curTick(), thread->getTC(),
+                                          inst, pc_state, macroInst);
+
+#endif // TRACING_ON
+
+        Fault fault = inst->execute(threadInfo, traceData);
+        updateCounters(inst);
+
+        if (fault != NoFault) {
+            if (traceData) {
+                if (DTRACE(ExecFaulting)) {
+                    traceData->dump();
+                }
+                delete traceData;
+                traceData = nullptr;
+            }
+
+            DPRINTF(KvmGuestDebug, "%s faulting inst: %s\n", pc_state,
+                    inst->disassemble(thread->instAddr()));
+
+            ThreadContext *tc = thread->getTC();
+            fault->invoke(tc, inst);
+            DPRINTF(KvmGuestDebug, "Fault at %s going to %s\n", pc_state,
+                    tc->pcState());
+            break;
+        } else {
+            pc_state = thread->pcState();
+            TheISA::advancePC(pc_state, inst);
+            thread->pcState(pc_state);
+
+            if (traceData) {
+                traceData->dump();
+                delete traceData;
+                traceData = nullptr;
+            }
+        }
+    } while (macroInst && !inst->isLastMicroop());
+}
+
 void
 BaseKvmCPU::handleKvmExitPageFault()
 {
@@ -1826,7 +1931,7 @@ BaseKvmCPU::handleKvmExitPageFault()
     assert(!isRomMicroPC(pc_state.microPC()));
 
     StaticInstPtr inst = getInst(tc, inst_addr);
-    Fault fault = execute(inst);
+    execute(inst);
 
     updateKvmState();
 

@@ -53,6 +53,7 @@
 #include "cpu/kvm/vm.hh"
 #include "cpu/base.hh"
 #include "cpu/simple_thread.hh"
+#include "sim/insttracer.hh"
 
 /** Signal to use to trigger exits from KVM */
 #define KVM_KICK_SIGNAL SIGRTMIN
@@ -918,6 +919,22 @@ class BaseKvmCPU : public BaseCPU
                   Request::Flags flags) override;
     Fault writeMem(uint8_t *data, unsigned size, Addr addr,
                    Request::Flags flags, uint64_t *res) override;
+
+    Trace::InstRecord *traceData = nullptr;
+
+    /**
+     * Perform counter updates for an executed instruction
+     *
+     * @inst The executed instruction
+     */
+    void updateCounters(const StaticInstPtr inst);
+
+    /**
+     * Use this execution context to execute an instruction
+     *
+     * @inst The static instruction that will be executed
+     */
+    void execute(StaticInstPtr inst);
 
     /**
      * Helper function to return a static instruction at certain address
