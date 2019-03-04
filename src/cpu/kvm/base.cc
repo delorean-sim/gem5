@@ -348,6 +348,12 @@ BaseKvmCPU::regStats()
         .name(name() + ".numHypercalls")
         .desc("number of hypercalls")
         ;
+
+    numPageFaults
+        .name(name() + ".numPageFaults")
+        .desc("number of page faults")
+        ;
+
 }
 
 void
@@ -1805,5 +1811,25 @@ BaseKvmCPU::getInst(ThreadContext *tc, TheISA::PCState &pc_state)
     thread->pcState(pc_state);
 
     return instPtr;
+}
+
+void
+BaseKvmCPU::handleKvmExitPageFault()
+{
+    ++numPageFaults;
+
+    syncThreadContext();
+
+    ThreadContext *tc(thread->getTC());
+    TheISA::PCState pc_state = thread->pcState();
+    DPRINTF(KvmGuestDebug, "Handling page fault %s\n", pc_state);
+    assert(!isRomMicroPC(pc_state.microPC()));
+
+    StaticInstPtr inst = getInst(tc, inst_addr);
+    Fault fault = execute(inst);
+
+    updateKvmState();
+
+    return;
 }
 

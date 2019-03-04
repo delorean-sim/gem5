@@ -928,6 +928,12 @@ class BaseKvmCPU : public BaseCPU
      */
     StaticInstPtr getInst(ThreadContext *tc, TheISA::PCState &pc_state);
 
+
+    /*
+     * Handler of KVM exits due to page faults
+     */
+    void handleKvmExitPageFault();
+
   public:
     /* @{ */
     Stats::Scalar numInsts;
@@ -943,6 +949,8 @@ class BaseKvmCPU : public BaseCPU
     Stats::Scalar numHalt;
     Stats::Scalar numInterrupts;
     Stats::Scalar numHypercalls;
+    Stats::Scalar numPageFaults;
+
     /* @} */
 
     /** Number of instructions executed by the CPU */
