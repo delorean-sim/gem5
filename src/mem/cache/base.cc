@@ -57,6 +57,7 @@
 #include "mem/cache/mshr.hh"
 #include "mem/cache/prefetch/base.hh"
 #include "mem/cache/queue_entry.hh"
+#include "model/warmsim.hh"
 #include "params/BaseCache.hh"
 #include "params/WriteAllocator.hh"
 #include "sim/core.hh"
@@ -106,6 +107,7 @@ BaseCache::BaseCache(const BaseCacheParams *p, unsigned blk_size)
       noTargetMSHR(nullptr),
       missCount(p->max_miss_count),
       addrRanges(p->addr_ranges.begin(), p->addr_ranges.end()),
+      missModel(p->miss_model),
       system(p->system)
 {
     // the MSHR queue has no reserve entries as we check the MSHR
@@ -280,6 +282,12 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 assert(pkt->req->masterId() < system->maxMasters());
                 mshr_hits[pkt->cmdToIndex()][pkt->req->masterId()]++;
 
+                if (missModel) {
+                    // FIXME: What if this MSHR is due to a prefetch
+                    // request?
+                    missModel->notifyMSHRHit(pkt);
+                }
+
                 // We use forward_time here because it is the same
                 // considering new targets. We have multiple
                 // requests for the same address here. It
@@ -329,6 +337,11 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                        pkt->req->isCacheMaintenance());
                 blk->status &= ~BlkReadable;
             }
+
+            if (missModel) {
+                missModel->notifyMiss(pkt);
+            }
+
             // Here we are using forward_time, modelling the latency of
             // a miss (outbound) just as forwardLatency, neglecting the
             // lookupLatency component.
@@ -1088,8 +1101,38 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         // if this a write-through packet it will be sent to cache
         // below
         return !pkt->writeThrough();
-    } else if (blk && (pkt->needsWritable() ? blk->isWritable() :
-                       blk->isReadable())) {
+    }
+
+    if (!blk && missModel && !missModel->isMiss(pkt)) {
+        std::vector<CacheBlk*> evict_blks;
+        const Addr addr = pkt->getBlockAddr(blkSize);
+        const bool is_secure = pkt->isSecure();
+        CacheBlk *victim = tags->findVictim(addr, is_secure, evict_blks);
+        assert(evict_blks.size() == 1);
+        if (!blk->isValid()) {
+            blk = victim;
+
+            MemCmd cmd = pkt->needsWritable() ? MemCmd::ReadExReq :
+                MemCmd::ReadSharedReq;
+            Packet miss_pkt(pkt->req, cmd, blkSize);
+            miss_pkt.allocate();
+            memSidePort.sendFunctional(&miss_pkt);
+            assert(!miss_pkt.isError());
+
+            tags->insertBlock(addr, is_secure, miss_pkt.req->masterId(),
+                              miss_pkt.req->taskId(), blk);
+            blk->status |= BlkReadable;
+            if (!miss_pkt.hasSharers()) {
+                blk->status |= BlkWritable;
+            }
+        }
+    }
+
+    if (blk && (pkt->needsWritable() ? blk->isWritable() :
+                blk->isReadable())) {
+        if (missModel) {
+            missModel->notifyHit(pkt, blk->wasPrefetched());
+        }
         // OK to satisfy access
         incHitCount(pkt);
         satisfyRequest(pkt, blk);

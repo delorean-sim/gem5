@@ -86,6 +86,7 @@ class BaseSlavePort;
 class MSHR;
 class MasterPort;
 class QueueEntry;
+class WarmSim;
 struct BaseCacheParams;
 
 /**
@@ -862,6 +863,8 @@ class BaseCache : public MemObject
      * The address range to which the cache responds on the CPU side.
      * Normally this is all possible memory addresses. */
     const AddrRangeList addrRanges;
+
+    WarmSim *missModel;
 
   public:
     /** System we are currently operating in. */

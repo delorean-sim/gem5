@@ -141,6 +141,8 @@ class BaseCache(MemObject):
     # data cache.
     write_allocator = Param.WriteAllocator(NULL, "Write allocator")
 
+    miss_model = Param.WarmSim(NULL, "Add a miss model")
+
 class Cache(BaseCache):
     type = 'Cache'
     cxx_header = 'mem/cache/cache.hh'
