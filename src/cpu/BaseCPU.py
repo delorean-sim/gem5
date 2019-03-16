@@ -228,6 +228,8 @@ class BaseCPU(MemObject):
 
     tracer = Param.InstTracer(default_tracer, "Instruction tracer")
 
+    memSampler = Param.MemSampler(NULL, "Memory Sampler")
+
     icache_port = MasterPort("Instruction Port")
     dcache_port = MasterPort("Data Port")
     _cached_ports = ['icache_port', 'dcache_port']

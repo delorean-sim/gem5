@@ -70,6 +70,7 @@
 class BaseCPU;
 struct BaseCPUParams;
 class CheckerCPU;
+class MemSampler;
 class ThreadContext;
 
 struct AddressMonitor
@@ -256,6 +257,8 @@ class BaseCPU : public MemObject
     std::vector<ThreadContext *> threadContexts;
 
     Trace::InstTracer * tracer;
+
+    MemSampler *memSampler;
 
   public:
 
