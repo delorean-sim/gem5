@@ -946,6 +946,8 @@ class BaseKvmCPU : public BaseCPU
     StaticInstPtr getInst(ThreadContext *tc, TheISA::PCState &pc_state);
 
 
+    bool exitPageFault = false;
+
     /*
      * Handler of KVM exits due to page faults
      */

@@ -1421,7 +1421,9 @@ void
 BaseKvmCPU::ioctlRun()
 {
     if (ioctl(KVM_RUN) == -1) {
-        if (errno != EINTR)
+        if (errno == EFAULT) {
+            exitPageFault = true;
+        } else if (errno != EINTR)
             panic("KVM: Failed to start virtual CPU (errno: %i)\n",
                   errno);
     }
@@ -1995,7 +1997,7 @@ BaseKvmCPU::handleKvmExitPageFault()
     DPRINTF(KvmGuestDebug, "Handling page fault %s\n", pc_state);
     assert(!isRomMicroPC(pc_state.microPC()));
 
-    StaticInstPtr inst = getInst(tc, inst_addr);
+    StaticInstPtr inst = getInst(tc, pc_state);
     execute(inst);
 
     updateKvmState();
