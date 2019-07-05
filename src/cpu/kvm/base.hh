@@ -951,6 +951,18 @@ class BaseKvmCPU : public BaseCPU
      */
     void handleKvmExitPageFault();
 
+    /*
+     * When entering single step mode we will at least execute a
+     * number of instructions before switch to KVM again
+     */
+    uint64_t singleStepThreshold;
+
+    /*
+     * Check whether we should enter single step mode or offload the
+     * execution to KVM
+     */
+    bool doSingleStep();
+
   public:
     /* @{ */
     Stats::Scalar numInsts;

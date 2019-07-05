@@ -50,6 +50,7 @@
 
 #include "arch/locked_mem.hh"
 #include "arch/mmapped_ipr.hh"
+#include "arch/registers.hh"
 #include "arch/utility.hh"
 #include "debug/Checkpoint.hh"
 #include "debug/Drain.hh"
@@ -86,6 +87,7 @@ BaseKvmCPU::BaseKvmCPU(BaseKvmCPUParams *params)
       skidUserInstStore(40),
       perfControlledByTimer(params->usePerfOverflow),
       hostFactor(params->hostFactor),
+      singleStepThreshold(100),
       ctrInsts(0),
       ctrUserInsts(0)
 {
@@ -680,7 +682,7 @@ BaseKvmCPU::tick()
           // Setup any pending instruction count breakpoints using
           // PerfEvent if we are going to execute more than just an IO
           // completion.
-          if (ticksToExecute > 0) {
+          if (ticksToExecute > 0 && !doSingleStep()) {
               setupInstStop();
               setupUserInstStop();
               setupUserInstLoadStop();
@@ -798,6 +800,28 @@ BaseKvmCPU::kvmRun(Tick ticks)
         // BaseKvmCPU::tick() to be rescheduled on the same tick
         // twice.
         ticksExecuted = clockPeriod();
+    } else if (doSingleStep()) {
+        syncThreadContext();
+        ThreadContext *tc(thread->getTC());
+
+        StaticInstPtr inst = StaticInst::nullStaticInstPtr;
+        StaticInstPtr last_inst = StaticInst::nullStaticInstPtr;
+        while (doSingleStep()) {
+            // maintain $r0 semantics
+            thread->setIntReg(TheISA::ZeroReg, 0);
+
+            TheISA::PCState pc_state = thread->pcState();
+            if (isRomMicroPC(pc_state.microPC())) {
+                inst = microcodeRom.fetchMicroop(pc_state.microPC(),
+                                                 last_inst);
+            } else {
+                inst = getInst(tc, pc_state);
+            }
+            execute(inst);
+            last_inst = inst;
+        }
+
+        updateKvmState();
     } else {
         // This method is executed as a result of a tick event. That
         // means that the event queue will be locked when entering the
@@ -1794,6 +1818,47 @@ BaseKvmCPU::writeMem(uint8_t *data, unsigned size, Addr addr,
         // And access the right address.
         addr = secondAddr;
     }
+}
+
+bool
+BaseKvmCPU::doSingleStep()
+{
+    static int single_step_inst = 0;
+
+    if (exitPageFault) {
+        exitPageFault = false;
+        single_step_inst = singleStepThreshold;
+        return true;
+    }
+
+    if (memSampler) {
+        uint64_t user_inst_load_stop = memSampler->getNextLoadStop();
+        assert(user_inst_load_stop >= ctrUserInstsLoad);
+        uint64_t user_inst_store_stop = memSampler->getNextStoreStop();
+        assert(user_inst_store_stop >= ctrUserInstsStore);
+
+        bool enable_ss = single_step_inst;
+        if (user_inst_load_stop - ctrUserInstsLoad < singleStepThreshold) {
+            DPRINTF(KvmGuestDebug, "Single step %i loads left\n",
+                    user_inst_load_stop - ctrUserInstsLoad);
+            enable_ss = true;
+        }
+        if (user_inst_store_stop - ctrUserInstsStore < singleStepThreshold) {
+            DPRINTF(KvmGuestDebug, "Single step %i stores left\n",
+                    user_inst_store_stop - ctrUserInstsStore);
+            enable_ss = true;
+        }
+        if (enable_ss) {
+            if (single_step_inst) {
+                single_step_inst--;
+            }
+            return true;
+        }
+    }
+
+    single_step_inst = 0;
+
+    return false;
 }
 
 StaticInstPtr
