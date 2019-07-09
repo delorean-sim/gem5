@@ -731,6 +731,10 @@ BaseKvmCPU::tick()
           system->instEventQueue.serviceEvents(system->totalNumInsts);
           comUserInstEventQueue[0]->serviceEvents(ctrUserInsts);
           system->userInstEventQueue.serviceEvents(system->totalNumUserInsts);
+          if (memSampler) {
+              memSampler->setTime(ctrUserInsts, ctrUserInstsLoad,
+                                  ctrUserInstsStore);
+          }
 
           if (tryDrain())
               _status = Idle;
