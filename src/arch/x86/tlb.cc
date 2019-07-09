@@ -395,6 +395,14 @@ TLB::translate(const RequestPtr &req,
                 // The page must have been present to get into the TLB in
                 // the first place. We'll assume the reserved bits are
                 // fine even though we're not checking them.
+
+                // We can still populate the request, the caller should
+                // check and ignore the req if there is a fault.
+                Addr paddr = entry->paddr | (vaddr & mask(entry->logBytes));
+                req->setPaddr(paddr);
+                if (entry->uncacheable)
+                    req->setFlags(Request::UNCACHEABLE |
+                                  Request::STRICT_ORDER);
                 return std::make_shared<PageFault>(vaddr, true, mode, inUser,
                                                    false);
             }

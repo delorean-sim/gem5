@@ -60,6 +60,7 @@
 #include "debug/KvmIO.hh"
 #include "debug/KvmRun.hh"
 #include "mem/fs_translating_port_proxy.hh"
+#include "model/mem_sampler.hh"
 #include "params/BaseKvmCPU.hh"
 #include "sim/process.hh"
 #include "sim/system.hh"
@@ -1682,6 +1683,18 @@ BaseKvmCPU::readMem(Addr addr, uint8_t *data, unsigned size,
 
         // translate to physical address
         Fault fault = thread->dtb->translateAtomic(req, tc, BaseTLB::Read);
+        if (memSampler && req->hasPaddr()) {
+            const Addr phys_addr = req->getPaddr();
+            if (system->isMemAddr(phys_addr)) {
+                bool prot = memSampler->kvmWatchpoints.disable(phys_addr);
+                if (prot && fault != NoFault) {
+                    // If the translate returned a fault and the page
+                    // was indeed protected by the sampler ignore the
+                    // protection fault.
+                    fault = NoFault;
+                }
+            }
+        }
 
         // Now do the access.
         if (fault == NoFault && !req->getFlags().isSet(Request::NO_ACCESS)) {
@@ -1692,7 +1705,16 @@ BaseKvmCPU::readMem(Addr addr, uint8_t *data, unsigned size,
                 TheISA::handleIprRead(thread->getTC(), &pkt);
             } else {
                 if (system->isMemAddr(pkt.getAddr())) {
+                    ThreadContext *tc = thread->getTC();
+                    const Addr phys_addr = pkt.getAddr();
+                    DPRINTF(KvmGuestDebug, "%s at %#x\n", __func__, phys_addr);
                     system->getPhysMem().access(&pkt);
+                    if (memSampler) {
+                        Addr inst_addr = thread->pcState().instAddr();
+                        memSampler->observeLoad(
+                            tc, inst_addr, phys_addr, addr, size);
+                        memSampler->kvmWatchpoints.enable(phys_addr);
+                    }
                 } else {
                     dataPort.sendAtomic(&pkt);
                 }
@@ -1763,6 +1785,18 @@ BaseKvmCPU::writeMem(uint8_t *data, unsigned size, Addr addr,
 
         // translate to physical address
         Fault fault = thread->dtb->translateAtomic(req, tc, BaseTLB::Write);
+        if (memSampler && req->hasPaddr()) {
+            const Addr phys_addr = req->getPaddr();
+            if (system->isMemAddr(phys_addr)) {
+                bool prot = memSampler->kvmWatchpoints.disable(phys_addr);
+                if (prot && fault != NoFault) {
+                    // If the translate returned a fault and the page
+                    // was indeed protected by the sampler ignore the
+                    // protection fault.
+                    fault = NoFault;
+                }
+            }
+        }
 
         // Now do the access.
         if (fault == NoFault) {
@@ -1784,7 +1818,21 @@ BaseKvmCPU::writeMem(uint8_t *data, unsigned size, Addr addr,
                 if (req->isMmappedIpr()) {
                     TheISA::handleIprWrite(thread->getTC(), &pkt);
                 } else {
-                    system->getPhysMem().access(&pkt);
+                    if (system->isMemAddr(pkt.getAddr())) {
+                        ThreadContext *tc = thread->getTC();
+                        const Addr phys_addr = pkt.getAddr();
+                        DPRINTF(KvmGuestDebug, "%s at %#x\n", __func__,
+                                phys_addr);
+                        system->getPhysMem().access(&pkt);
+                        if (memSampler) {
+                            Addr inst_addr = thread->pcState().instAddr();
+                            memSampler->observeStore(
+                                tc, inst_addr, phys_addr, addr, size);
+                            memSampler->kvmWatchpoints.enable(phys_addr);
+                        }
+                    } else {
+                        dataPort.sendAtomic(&pkt);
+                    }
                 }
                 assert(!pkt.isError());
 
